@@ -1,15 +1,126 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum UserRole {
+  CUSTOMER
+  MERCHANT
+}
+
+model User {
+  id                String    @id @default(uuid())
+  privyId           String    @unique // did:privy:xxx
+  email             String?   @unique
+  name              String?
+  role              UserRole  @default(CUSTOMER)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  isGuest           Boolean   @default(false)
+  hasAcceptedTerms  Boolean   @default(false)
+  
+  // Wallet information
+  wallets           Wallet[]
+  
+  // Role-specific relations
+  customerProfile   CustomerProfile?
+  merchantProfile   MerchantProfile?
+
+  // Transaction relations
+  transactions         Transaction[]
+  
+}
+
+model Transaction {
+  id                String    @id @default(uuid())
+  userId            String    // The user who owns this transaction record
+  type              String    // "SENT" or "RECEIVED"
+  counterpartyName  String    // Name of the person/merchant (e.g., "Dad", "Google Pay", "Google")
+  amount            Float
+  currency          String    @default("USDC")
+  solanaSignature   String    // Transaction hash/signature for fetching full details from chain
+  createdAt         DateTime  @default(now())
+
+  // Relations
+  user              User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([solanaSignature])
+  @@index([createdAt])
+}
+
+model Wallet {
+  id              String    @id @default(uuid())
+  address         String    @unique
+  chainId         String    // e.g., "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+  chainType       String    // e.g., "solana"
+  connectorType   String?   // e.g., "embedded"
+  isDelegated     Boolean   @default(false)
+  walletClient    String?   // e.g., "privy"
+  walletClientType String?  // e.g., "privy"
+  walletIndex     Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  
+  
+  @@index([userId])
+}
+
+model CustomerProfile {
+  id              String    @id @default(uuid())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Customer-specific fields
+  preferredPaymentWallet String?
+  
+  // Relations
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MerchantProfile {
+  id              String    @id @default(uuid())
+  businessName    String?
+  description     String?
+  logoUrl         String?
+  websiteUrl      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Merchant-specific fields
+  defaultReceivingWallet String?
+  
+  // Relations
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Payment settings
+  paymentSettings PaymentSettings?
+}
+
+model PaymentSettings {
+  id                String    @id @default(uuid())
+  autoConfirm       Boolean   @default(true)
+  minAmount         Float?    // Minimum transaction amount
+  maxAmount         Float?    // Maximum transaction amount
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  merchantId        String    @unique
+  merchant          MerchantProfile @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+}
+
