@@ -11,116 +11,94 @@ datasource db {
 }
 
 enum UserRole {
-  CUSTOMER
+  USER
   MERCHANT
 }
 
-model User {
-  id                String    @id @default(uuid())
-  privyId           String    @unique // did:privy:xxx
-  email             String?   @unique
-  name              String?
-  role              UserRole  @default(CUSTOMER)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  isGuest           Boolean   @default(false)
-  hasAcceptedTerms  Boolean   @default(false)
-  
-  // Wallet information
-  wallets           Wallet[]
-  
-  // Role-specific relations
-  customerProfile   CustomerProfile?
-  merchantProfile   MerchantProfile?
-
-  // Transaction relations
-  transactions         Transaction[]
-  
+enum TransactionStatus {
+  SUCCESS
+  PENDING
+  FAILURE
 }
 
-model Transaction {
-  id                String    @id @default(uuid())
-  userId            String    // The user who owns this transaction record
-  type              String    // "SENT" or "RECEIVED"
-  counterpartyName  String    // Name of the person/merchant (e.g., "Dad", "Google Pay", "Google")
-  amount            Float
-  currency          String    @default("USDC")
-  solanaSignature   String    // Transaction hash/signature for fetching full details from chain
-  createdAt         DateTime  @default(now())
+enum TransactionType {
+  INCOMING
+  OUTGOING
+}
 
+model User {
+  id        String   @id @default(uuid())
+  name      String?
+  email     String?  @unique
+  did       String   @unique 
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  
   // Relations
-  user              User      @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-  @@index([solanaSignature])
-  @@index([createdAt])
+  wallet       Wallet?
+  merchantForm MerchantForm?
+  transactions Transaction[]
+  gasFees      GasFee[]
 }
 
 model Wallet {
-  id              String    @id @default(uuid())
-  address         String    @unique
-  chainId         String    // e.g., "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
-  chainType       String    // e.g., "solana"
-  connectorType   String?   // e.g., "embedded"
-  isDelegated     Boolean   @default(false)
-  walletClient    String?   // e.g., "privy"
-  walletClientType String?  // e.g., "privy"
-  walletIndex     Int?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            String @id @unique
+  walletAddress String @unique
   
   // Relations
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   
+  transactions Transaction[]
+  gasFees      GasFee[]
+}
+
+model MerchantForm {
+  id               String  @id @default(uuid())
+  businessName     String
+  businessCategory String
+  profileImage     String?
   
+  // Relations
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id        String            @id @default(uuid())
+  amount    Float
+  sender    String            // Will store name resolved from wallet address
+  receiver  String            // Will store name resolved from wallet address
+  timestamp DateTime          @default(now())
+  status    TransactionStatus @default(PENDING)
+  type      TransactionType
+  title     String?
+  
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  
+  walletId String
+  wallet   Wallet @relation(fields: [walletId], references: [id])
   
   @@index([userId])
+  @@index([walletId])
+  @@index([timestamp])
 }
 
-model CustomerProfile {
-  id              String    @id @default(uuid())
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  // Customer-specific fields
-  preferredPaymentWallet String?
+model GasFee {
+  id            String   @id @default(uuid())
+  amount        Float
+  timestamp     Int      // Unix epoch timestamp
   
   // Relations
-  userId          String    @unique
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  
+  walletAddress String
+  wallet        Wallet   @relation(fields: [walletAddress], references: [walletAddress])
+  
+  @@index([userId])
+  @@index([walletAddress])
+  @@index([timestamp])
 }
-
-model MerchantProfile {
-  id              String    @id @default(uuid())
-  businessName    String?
-  description     String?
-  logoUrl         String?
-  websiteUrl      String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  // Merchant-specific fields
-  defaultReceivingWallet String?
-  
-  // Relations
-  userId          String    @unique
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Payment settings
-  paymentSettings PaymentSettings?
-}
-
-model PaymentSettings {
-  id                String    @id @default(uuid())
-  autoConfirm       Boolean   @default(true)
-  minAmount         Float?    // Minimum transaction amount
-  maxAmount         Float?    // Maximum transaction amount
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
-  // Relations
-  merchantId        String    @unique
-  merchant          MerchantProfile @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-}
-
